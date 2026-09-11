@@ -11,14 +11,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Find Xcode Project
+        id: find_paths
+        run: |
+          PROJ_PATH=$(find . -name "*.xcodeproj" -not -path "*/.*" | head -n 1)
+          if [ -z "$PROJ_PATH" ]; then
+            echo "Error: Could not find .xcodeproj file!"
+            exit 1
+          fi
+          PROJ_DIR=$(dirname "$PROJ_PATH")
+          PROJ_NAME=$(basename "$PROJ_PATH")
+          echo "proj_dir=$PROJ_DIR" >> $GITHUB_OUTPUT
+          echo "proj_name=$PROJ_NAME" >> $GITHUB_OUTPUT
+          echo "Found project: $PROJ_PATH in directory: $PROJ_DIR"
 
       - name: Build Archive
         run: |
+          cd "${{ steps.find_paths.outputs.proj_dir }}"
+          SCHEME_NAME=$(xcodebuild -list -project "${{ steps.find_paths.outputs.proj_name }}" | grep -A 10 "Schemes:" | tail -n +2 | xargs | awk '{print $1}')
+          if [ -z "$SCHEME_NAME" ]; then
+            SCHEME_NAME="ThreeOneOSFive"
+          fi
+          echo "Building scheme: $SCHEME_NAME"
           xcodebuild archive \
-            -project ThreeOneOSFive.xcodeproj \
-            -scheme 3105 \
+            -project "${{ steps.find_paths.outputs.proj_name }}" \
+            -scheme "$SCHEME_NAME" \
             -destination "generic/platform=iOS" \
             -archivePath build/App.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
@@ -26,6 +43,7 @@ jobs:
 
       - name: Export Unsigned IPA
         run: |
+          cd "${{ steps.find_paths.outputs.proj_dir }}"
           mkdir -p build/Payload
           cp -r build/App.xcarchive/Products/Applications/*.app build/Payload/
           cd build
@@ -35,4 +53,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: App-IPA
-          path: build/App.ipa
+          path: |
+            **/build/App.ipa
